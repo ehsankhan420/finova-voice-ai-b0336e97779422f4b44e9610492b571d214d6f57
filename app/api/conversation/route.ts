@@ -15,6 +15,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Gemini API key not configured" }, { status: 500 })
     }
 
+    console.log("Processing conversation message:", text.substring(0, 50) + (text.length > 50 ? "..." : ""))
+
     // Format conversation history for Gemini API
     const formattedHistory = conversationHistory.map((message: any) => ({
       role: message.role === "user" ? "user" : "model",
@@ -60,6 +62,7 @@ export async function POST(request: NextRequest) {
 
     // Extract text from Gemini response
     const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated"
+    console.log("Generated response:", responseText.substring(0, 50) + (responseText.length > 50 ? "..." : ""))
 
     return NextResponse.json({
       text: responseText,
@@ -67,7 +70,13 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error("Error in conversation endpoint:", error)
-    return NextResponse.json({ error: "Failed to process conversation" }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "Failed to process conversation",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    )
   }
 }
 

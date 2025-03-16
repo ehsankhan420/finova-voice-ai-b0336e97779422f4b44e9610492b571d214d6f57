@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Mic, MicOff, Volume2, Loader2, VolumeX } from "lucide-react"
@@ -7,7 +9,7 @@ import { createSpeechRecognition } from "@/lib/speech-recognition"
 import { synthesizeSpeech, sendConversationMessage, type Message } from "@/lib/api"
 import { toast } from "@/hooks/use-toast"
 import { motion, AnimatePresence } from "framer-motion"
-import { cn, formatTime, isSpeechRecognitionSupported } from "@/lib/utils"
+import { cn, formatTime } from "@/lib/utils"
 
 export const VoiceCall = ({ onEndCall }: { onEndCall?: () => void }) => {
   const [transcription, setTranscription] = useState("")
@@ -22,7 +24,6 @@ export const VoiceCall = ({ onEndCall }: { onEndCall?: () => void }) => {
   const [listeningDuration, setListeningDuration] = useState(0)
   const [isActive, setIsActive] = useState(true)
   const [isMuted, setIsMuted] = useState(false)
-  const [keepAliveInterval, setKeepAliveInterval] = useState<NodeJS.Timeout | null>(null)
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const recognitionRef = useRef<any>(null)
@@ -30,6 +31,8 @@ export const VoiceCall = ({ onEndCall }: { onEndCall?: () => void }) => {
   const listeningTimerRef = useRef<NodeJS.Timeout | null>(null)
   const lastSpeechRef = useRef<number>(Date.now())
   const conversationEndRef = useRef<HTMLDivElement>(null)
+  const keepAliveIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const restartTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Auto-scroll to bottom when conversation updates
   useEffect(() => {
@@ -38,172 +41,250 @@ export const VoiceCall = ({ onEndCall }: { onEndCall?: () => void }) => {
     }
   }, [conversationHistory])
 
-  // Initialize speech recognition
+  // Initialize speech recognition and set up keep-alive
   useEffect(() => {
-    if (typeof window !== "undefined" && isActive) {
-      setupSpeechRecognition()
+    if (typeof window !== "undefined" && isActive && !isMuted && !isSpeaking) {
+      console.log("Setting up initial speech recognition")
+      setupAndStartRecognition()
 
-      // Set up a keep-alive interval to prevent the page from going idle
-      const interval = setInterval(() => {
+      // Set up a keep-alive interval
+      keepAliveIntervalRef.current = setInterval(() => {
         if (!isListening && !isProcessing && !isSpeaking && isActive && !isMuted) {
           console.log("Keep-alive: restarting speech recognition")
-          restartSpeechRecognition()
+          setupAndStartRecognition()
         }
-      }, 30000) // Check every 30 seconds
-
-      setKeepAliveInterval(interval)
+      }, 10000) // Check every 10 seconds
     }
 
     return () => {
       cleanupSpeechRecognition()
-      if (keepAliveInterval) {
-        clearInterval(keepAliveInterval)
+      if (keepAliveIntervalRef.current) {
+        clearInterval(keepAliveIntervalRef.current)
+        keepAliveIntervalRef.current = null
       }
     }
-  }, [isActive])
+  }, [isActive, isSpeaking])
 
-  const setupSpeechRecognition = () => {
-    if (!isActive) return
+  // Handle mute state changes
+  useEffect(() => {
+    if (isMuted) {
+      // When muted, stop recognition
+      stopRecognition()
 
+      // Also stop any playing audio
+      if (audioRef.current && audioRef.current.paused === false) {
+        audioRef.current.pause()
+        setIsSpeaking(false)
+      }
+    } else if (isActive && !isProcessing && !isSpeaking) {
+      // When unmuted, start recognition only if not speaking
+      console.log("Unmuted, starting recognition")
+      setupAndStartRecognition()
+    }
+  }, [isMuted, isSpeaking])
+
+  // Add effect to stop recognition when speaking starts
+  useEffect(() => {
+    if (isSpeaking) {
+      console.log("AI is speaking - stopping microphone")
+      stopRecognition()
+    } else if (isActive && !isMuted && !isProcessing && !isSpeaking) {
+      console.log("AI finished speaking - restarting microphone")
+      // Small delay to ensure audio playback is fully complete
+      setTimeout(() => {
+        setupAndStartRecognition()
+      }, 500)
+    }
+  }, [isSpeaking])
+
+  const setupAndStartRecognition = () => {
+    if (!isActive || isMuted || isSpeaking || isProcessing) {
+      console.log("Not starting recognition because:", {
+        isActive,
+        isMuted,
+        isSpeaking,
+        isProcessing,
+      })
+      return
+    }
+
+    console.log("Setting up speech recognition")
+
+    // Clean up any existing recognition
+    stopRecognition()
+
+    // Create a new recognition instance
     recognitionRef.current = createSpeechRecognition()
 
-    if (recognitionRef.current) {
-      recognitionRef.current.continuous = true
-      recognitionRef.current.interimResults = true
+    if (!recognitionRef.current) {
+      console.error("Failed to create speech recognition")
+      return
+    }
 
-      recognitionRef.current.onstart = () => {
-        setIsListening(true)
-        setListeningDuration(0)
+    // Configure recognition
+    recognitionRef.current.continuous = true
+    recognitionRef.current.interimResults = true
 
-        // Start timer for listening duration
-        listeningTimerRef.current = setInterval(() => {
-          setListeningDuration((prev) => prev + 1)
+    // Set up event handlers
+    recognitionRef.current.onstart = () => {
+      console.log("Speech recognition started")
+      setIsListening(true)
+      setListeningDuration(0)
+
+      // Start timer for listening duration
+      if (listeningTimerRef.current) {
+        clearInterval(listeningTimerRef.current)
+      }
+
+      listeningTimerRef.current = setInterval(() => {
+        setListeningDuration((prev) => prev + 1)
+      }, 1000)
+    }
+
+    recognitionRef.current.onresult = (event: any) => {
+      // Skip processing if muted or speaking
+      if (isMuted || isSpeaking) return
+
+      lastSpeechRef.current = Date.now()
+
+      // Get the transcript
+      let finalTranscript = ""
+      let interimTranscript = ""
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript
+        } else {
+          interimTranscript += event.results[i][0].transcript
+        }
+      }
+
+      const transcript = finalTranscript || interimTranscript
+      setTranscription(transcript)
+
+      // Reset silence detection timer
+      if (silenceTimer) {
+        clearTimeout(silenceTimer)
+      }
+
+      // Set a new silence detection timer
+      const timer = setTimeout(() => {
+        if (transcript.trim() && Date.now() - lastSpeechRef.current >= 1500 && !isMuted && !isSpeaking) {
+          stopRecognition()
+          handleSendVoice(transcript)
+        }
+      }, 1500)
+
+      setSilenceTimer(timer)
+    }
+
+    recognitionRef.current.onerror = (event: any) => {
+      console.error("Speech recognition error:", event.error)
+
+      if (event.error !== "no-speech") {
+        toast({
+          title: "Speech Recognition Error",
+          description: `An error occurred: ${event.error}`,
+          variant: "destructive",
+        })
+      }
+
+      setIsListening(false)
+
+      // Try to restart after an error
+      if (isActive && !isMuted && !isProcessing && !isSpeaking) {
+        if (restartTimeoutRef.current) {
+          clearTimeout(restartTimeoutRef.current)
+        }
+
+        restartTimeoutRef.current = setTimeout(() => {
+          setupAndStartRecognition()
         }, 1000)
       }
+    }
 
-      recognitionRef.current.onresult = (event: any) => {
-        // Skip processing if muted
-        if (isMuted) return
+    recognitionRef.current.onend = () => {
+      console.log("Speech recognition ended")
+      setIsListening(false)
 
-        lastSpeechRef.current = Date.now()
-
-        // Get the final transcript from the results
-        let finalTranscript = ""
-        let interimTranscript = ""
-
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript
-          } else {
-            interimTranscript += event.results[i][0].transcript
-          }
-        }
-
-        // Use the final transcript if available, otherwise use the interim
-        const transcript = finalTranscript || interimTranscript
-        setTranscription(transcript)
-
-        // Reset silence detection timer
-        if (silenceTimer) {
-          clearTimeout(silenceTimer)
-        }
-
-        // Set a new silence detection timer
-        const timer = setTimeout(() => {
-          // If we've been silent for 1.5 seconds and have a transcript, send the message
-          if (transcript.trim() && Date.now() - lastSpeechRef.current >= 1500 && !isMuted) {
-            stopListening()
-            handleSendVoice(transcript)
-          }
-        }, 1500)
-
-        setSilenceTimer(timer)
+      if (listeningTimerRef.current) {
+        clearInterval(listeningTimerRef.current)
+        listeningTimerRef.current = null
       }
 
-      recognitionRef.current.onerror = (event: any) => {
-        console.error("Speech recognition error:", event.error)
-        if (event.error !== "no-speech") {
-          toast({
-            title: "Speech Recognition Error",
-            description: `An error occurred: ${event.error}`,
-            variant: "destructive",
-          })
-        }
-        setIsListening(false)
-      }
-
-      recognitionRef.current.onend = () => {
-        setIsListening(false)
-        if (listeningTimerRef.current) {
-          clearInterval(listeningTimerRef.current)
-          listeningTimerRef.current = null
+      // Try to restart if it ended unexpectedly and we're not speaking
+      if (isActive && !isMuted && !isProcessing && !isSpeaking) {
+        if (restartTimeoutRef.current) {
+          clearTimeout(restartTimeoutRef.current)
         }
 
-        // Restart recognition if it stopped unexpectedly and we're still active
-        if (isActive && !isProcessing && !isSpeaking && !isMuted) {
-          try {
-            setTimeout(() => {
-              restartSpeechRecognition()
-            }, 1000)
-          } catch (e) {
-            // Ignore errors when restarting
-          }
-        }
+        restartTimeoutRef.current = setTimeout(() => {
+          setupAndStartRecognition()
+        }, 1000)
       }
     }
-  }
 
-  const restartSpeechRecognition = () => {
-    if (!isActive || isMuted) return
-
+    // Start recognition
     try {
-      if (recognitionRef.current) {
-        // Check if recognition is already running
-        if (isListening) {
-          console.log("Recognition is already running, no need to restart")
-          return
+      console.log("Starting speech recognition")
+      recognitionRef.current.start()
+    } catch (error) {
+      console.error("Error starting speech recognition:", error)
+
+      // If already started, just update state
+      if (error instanceof Error && error.message.includes("already started")) {
+        setIsListening(true)
+      } else {
+        // Try again after a delay
+        if (restartTimeoutRef.current) {
+          clearTimeout(restartTimeoutRef.current)
         }
 
-        // Make sure to stop it first to avoid errors
-        try {
-          recognitionRef.current.stop()
-        } catch (e) {
-          // Ignore errors when stopping
-          console.log("Error stopping recognition before restart:", e)
-        }
+        restartTimeoutRef.current = setTimeout(() => {
+          setupAndStartRecognition()
+        }, 1000)
       }
-
-      // Wait a moment before starting again
-      setTimeout(() => {
-        if (recognitionRef.current && isActive && !isMuted && !isListening) {
-          try {
-            recognitionRef.current.start()
-            console.log("Speech recognition restarted successfully")
-          } catch (e) {
-            console.error("Error starting recognition in restart:", e)
-          }
-        }
-      }, 300)
-    } catch (e) {
-      console.error("Error in restartSpeechRecognition:", e)
     }
   }
 
-  const cleanupSpeechRecognition = () => {
+  const stopRecognition = () => {
     if (recognitionRef.current) {
       try {
-        recognitionRef.current.stop()
+        // Remove event handlers to prevent callbacks
+        const tempRecognition = recognitionRef.current
+        recognitionRef.current = null
+
+        tempRecognition.onend = null
+        tempRecognition.onstart = null
+        tempRecognition.onerror = null
+        tempRecognition.onresult = null
+
+        tempRecognition.stop()
+        console.log("Speech recognition stopped")
       } catch (e) {
-        // Ignore errors when stopping
+        console.error("Error stopping speech recognition:", e)
       }
     }
+
+    setIsListening(false)
 
     if (listeningTimerRef.current) {
       clearInterval(listeningTimerRef.current)
+      listeningTimerRef.current = null
     }
 
     if (silenceTimer) {
       clearTimeout(silenceTimer)
+      setSilenceTimer(null)
+    }
+  }
+
+  const cleanupSpeechRecognition = () => {
+    stopRecognition()
+
+    if (restartTimeoutRef.current) {
+      clearTimeout(restartTimeoutRef.current)
+      restartTimeoutRef.current = null
     }
   }
 
@@ -231,79 +312,6 @@ export const VoiceCall = ({ onEndCall }: { onEndCall?: () => void }) => {
     }
   }, [isSpeaking])
 
-  // Auto-start listening when component mounts
-  useEffect(() => {
-    if (isActive && isSpeechRecognitionSupported() && !isMuted) {
-      startListening()
-    }
-
-    return () => {
-      stopListening()
-    }
-  }, [isActive, isMuted])
-
-  const startListening = () => {
-    if (!isActive || isMuted) return
-
-    if (!isSpeechRecognitionSupported()) {
-      toast({
-        title: "Speech Recognition Error",
-        description: "Speech recognition is not supported in your browser.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    if (!recognitionRef.current) {
-      setupSpeechRecognition()
-    }
-
-    try {
-      // Check if recognition is already running
-      if (isListening) {
-        console.log("Recognition is already running, not starting again")
-        return
-      }
-
-      recognitionRef.current.start()
-      lastSpeechRef.current = Date.now()
-      setTranscription("")
-    } catch (error: any) {
-      console.error("Error starting speech recognition:", error)
-
-      // If the error is "recognition has already started", update the state
-      if (error.message && error.message.includes("already started")) {
-        setIsListening(true)
-      } else {
-        toast({
-          title: "Speech Recognition Error",
-          description: `Failed to start: ${error.message}`,
-          variant: "destructive",
-        })
-      }
-    }
-  }
-
-  const stopListening = () => {
-    if (recognitionRef.current && isListening) {
-      try {
-        recognitionRef.current.stop()
-      } catch (e) {
-        // Ignore errors when stopping
-      }
-
-      if (listeningTimerRef.current) {
-        clearInterval(listeningTimerRef.current)
-        listeningTimerRef.current = null
-      }
-
-      if (silenceTimer) {
-        clearTimeout(silenceTimer)
-        setSilenceTimer(null)
-      }
-    }
-  }
-
   const handleSendVoice = async (text: string) => {
     if (!text.trim() || !isActive) return
 
@@ -325,27 +333,38 @@ export const VoiceCall = ({ onEndCall }: { onEndCall?: () => void }) => {
 
       setConversationId(data.conversationId)
 
-      // Synthesize speech with ElevenLabs
-      try {
-        const { audioUrl: newAudioUrl } = await synthesizeSpeech(data.text, "")
-        setAudioUrl(newAudioUrl)
+      // Only proceed with audio if not muted
+      if (!isMuted && isActive) {
+        try {
+          // Stop any currently playing audio
+          if (audioRef.current) {
+            audioRef.current.pause()
+            audioRef.current.src = ""
+          }
 
-        // Play the audio automatically
-        setTimeout(() => {
-          if (audioRef.current && isActive) {
+          // Get streaming audio URL
+          const { audioUrl: newAudioUrl } = await synthesizeSpeech(data.text, "")
+          setAudioUrl(newAudioUrl)
+
+          // Play the audio automatically
+          if (audioRef.current) {
             // Set up event listeners
             audioRef.current.onplay = () => {
               setIsSpeaking(true)
               console.log("Audio started playing")
+              // Explicitly stop recognition when audio starts playing
+              stopRecognition()
             }
 
             audioRef.current.onended = handleAudioEnded
-
             audioRef.current.onerror = (e) => {
               console.error("Audio playback error:", e)
               setIsSpeaking(false)
               handleAudioEnded()
             }
+
+            // Create a new audio element each time to avoid state issues
+            audioRef.current.src = newAudioUrl
 
             // Start playback
             const playPromise = audioRef.current.play()
@@ -363,17 +382,25 @@ export const VoiceCall = ({ onEndCall }: { onEndCall?: () => void }) => {
                 })
             }
           }
-        }, 100)
-      } catch (audioError) {
-        console.error("Error with ElevenLabs:", audioError)
-        setIsSpeaking(false)
+        } catch (audioError) {
+          console.error("Error with audio playback:", audioError)
+          setIsSpeaking(false)
 
-        // If there's an error with audio, still restart listening
+          // If there's an error with audio, still restart listening
+          setTimeout(() => {
+            if (isActive && !isMuted) {
+              setupAndStartRecognition()
+            }
+          }, 1000)
+        }
+      } else {
+        // If muted, don't play audio but still restart listening if needed
+        console.log("Audio muted, skipping playback")
         setTimeout(() => {
           if (isActive && !isMuted) {
-            startListening()
+            setupAndStartRecognition()
           }
-        }, 500)
+        }, 1000)
       }
     } catch (error: any) {
       console.error("Conversation error:", error)
@@ -385,7 +412,9 @@ export const VoiceCall = ({ onEndCall }: { onEndCall?: () => void }) => {
 
       // Restart listening if there was an error and we're still active
       if (isActive && !isMuted) {
-        startListening()
+        setTimeout(() => {
+          setupAndStartRecognition()
+        }, 1000)
       }
     } finally {
       setIsProcessing(false)
@@ -398,29 +427,45 @@ export const VoiceCall = ({ onEndCall }: { onEndCall?: () => void }) => {
 
     // Auto-start listening again after AI finishes speaking if we're still active
     if (isActive && !isMuted) {
+      // Add a delay before restarting recognition to prevent feedback
       setTimeout(() => {
-        startListening()
-      }, 500)
+        setupAndStartRecognition()
+      }, 1000)
     }
   }
 
   const toggleMute = () => {
-    setIsMuted(!isMuted)
+    const newMutedState = !isMuted
+    setIsMuted(newMutedState)
 
-    if (isMuted) {
-      // Unmuting
-      toast({
-        title: "Microphone Unmuted",
-        description: "The system will now listen to your voice.",
-      })
-      startListening()
-    } else {
+    if (newMutedState) {
       // Muting
       toast({
         title: "Microphone Muted",
         description: "The system will not listen to your voice until unmuted.",
       })
-      stopListening()
+
+      // Stop listening immediately
+      stopRecognition()
+
+      // Also stop any playing audio
+      if (audioRef.current) {
+        audioRef.current.pause()
+        setIsSpeaking(false)
+      }
+    } else {
+      // Unmuting
+      toast({
+        title: "Microphone Unmuted",
+        description: "The system will now listen to your voice.",
+      })
+
+      // Start listening after a short delay if not speaking
+      if (!isSpeaking) {
+        setTimeout(() => {
+          setupAndStartRecognition()
+        }, 500)
+      }
     }
   }
 
@@ -494,7 +539,15 @@ export const VoiceCall = ({ onEndCall }: { onEndCall?: () => void }) => {
           {isActive && !isMuted && !isListening && !isSpeaking && !isProcessing && (
             <>
               <div className="w-2 h-2 rounded-full bg-gray-500"></div>
-              Idle
+              <span>Idle</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-2 h-6 px-2 text-xs"
+                onClick={() => setupAndStartRecognition()}
+              >
+                Restart
+              </Button>
             </>
           )}
         </div>
@@ -575,7 +628,13 @@ export const VoiceCall = ({ onEndCall }: { onEndCall?: () => void }) => {
           {audioVisualization.map((height, index) => (
             <motion.div
               key={index}
-              className="w-1.5 bg-gradient-to-t from-primary/40 to-primary rounded-full"
+              className="w-1.5 bg-gradient-to-t from-primary/40 to-primary rounded-full audio-bar"
+              style={
+                {
+                  "--random-height": `${height}%`,
+                  "--index": index,
+                } as React.CSSProperties
+              }
               initial={{ height: "10%" }}
               animate={{ height: `${height}%` }}
               transition={{ duration: 0.2 }}
@@ -585,7 +644,7 @@ export const VoiceCall = ({ onEndCall }: { onEndCall?: () => void }) => {
       )}
 
       {/* Audio element */}
-      <audio ref={audioRef} src={audioUrl || ""} onEnded={handleAudioEnded} preload="auto" />
+      <audio ref={audioRef} onEnded={handleAudioEnded} preload="auto" />
     </div>
   )
 }

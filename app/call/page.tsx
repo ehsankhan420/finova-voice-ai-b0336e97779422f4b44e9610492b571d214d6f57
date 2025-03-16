@@ -102,7 +102,7 @@ export default function CallPage() {
               <Button
                 variant="default"
                 onClick={startCall}
-                className="flex items-center gap-2 bg-gradient-to-r from-green-600 to-emerald-500"
+                className="flex items-center gap-2 bg-gradient-to-r from-green-600 to-emerald-500 hover:opacity-90 transition-opacity"
               >
                 <Phone className="h-4 w-4" />
                 Start Call

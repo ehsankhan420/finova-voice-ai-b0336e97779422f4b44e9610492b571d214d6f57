@@ -65,22 +65,16 @@ export async function POST(request: NextRequest) {
       contents: [
         {
           parts: [
-            {
-              text: prompt
-            },
-            {
-              inline_data: {
-                mime_type: file.type,
-                data: base64Audio
-              }
-            }
+            { text: prompt },
+            { inline_data: { mime_type: file.type, data: base64Audio } }
           ]
         }
       ],
       generation_config: {
         temperature: 0.4,
         top_p: 0.95,
-        top_k: 40
+        top_k: 40,
+        max_output_tokens: 300 // Limit response length
       }
     }
     
@@ -91,9 +85,7 @@ export async function POST(request: NextRequest) {
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(requestBody)
         }
       )
@@ -116,9 +108,13 @@ export async function POST(request: NextRequest) {
     
     const geminiData = await geminiResponse.json()
     
-    // Extract text from Gemini response
-    const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated'
-    
+    // Extract text from Gemini response, clean up asterisks and excessive whitespace
+    // Extract text from Gemini response, clean up formatting
+let text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated'
+
+// Remove markdown-style asterisks and trim spaces
+text = text.replace(/\*\*/g, '').replace(/\*/g, '').trim();
+
     // Clean up: Delete the temporary file
     try {
       await unlink(filePath)

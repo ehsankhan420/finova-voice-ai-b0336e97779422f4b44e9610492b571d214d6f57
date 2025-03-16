@@ -39,27 +39,45 @@ export async function processVoice(formData: FormData): Promise<ProcessVoiceResp
   }
 }
 
+// Update the synthesizeSpeech function to use direct streaming with fallback
 export async function synthesizeSpeech(text: string, requestId: string): Promise<SynthesizeSpeechResponse> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/synthesize-speech`, {
+    // Create a direct streaming URL to our API endpoint
+    const response = await fetch("/api/synthesize-speech", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ text, requestId }),
+      body: JSON.stringify({ text }),
     })
 
-    if (!response.ok) {
-      throw new Error("Failed to synthesize speech")
+    // Check if the response is JSON (error or fallback) or audio
+    const contentType = response.headers.get("Content-Type")
+
+    if (contentType && contentType.includes("application/json")) {
+      // This is a JSON response, likely an error or fallback instruction
+      const jsonResponse = await response.json()
+
+      if (jsonResponse.useClientSynthesis) {
+        console.log("Using client-side speech synthesis fallback")
+        return {
+          audioUrl: "",
+          text: jsonResponse.text || text,
+          useClientSynthesis: true,
+        }
+      }
+
+      throw new Error(jsonResponse.error || "Unknown error")
     }
 
-    const data = await response.json()
+    // This is an audio response
+    const audioBlob = await response.blob()
+    const audioUrl = URL.createObjectURL(audioBlob)
 
-    // Return the text along with the audio URL
     return {
-      audioUrl: data.audioUrl || "",
-      text: data.text || text,
-      useClientSynthesis: data.useClientSynthesis || false,
+      audioUrl,
+      text,
+      useClientSynthesis: false,
     }
   } catch (error) {
     console.error("Error synthesizing speech:", error)
