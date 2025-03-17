@@ -1,5 +1,7 @@
 "use client"
 
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { Upload, Volume2, Wand2, Zap } from "lucide-react"
 import UploadForm from "@/components/upload-form"
@@ -7,8 +9,31 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { motion } from "framer-motion"
 
 export default function Home() {
+  const router = useRouter()
+
+  const [pageKey, setPageKey] = useState(0)
+  useEffect(() => {
+    // Force re-render when component mounts
+    setPageKey((prev) => prev + 1)
+  }, [])
+
+  // Add a new useEffect to handle navigation events
+  useEffect(() => {
+    // Add event listener for route changes
+    const handleRouteChange = () => {
+      // Reset any state if needed when navigating
+    }
+
+    window.addEventListener("beforeunload", handleRouteChange)
+
+    return () => {
+      window.removeEventListener("beforeunload", handleRouteChange)
+    }
+  }, [])
+
   return (
     <motion.div
+      key={pageKey}
       className="min-h-screen transition-colors duration-300 relative"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -44,26 +69,33 @@ export default function Home() {
             animate={{ x: 0, opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.1 }}
           >
-            <a
-              href="#features"
+            <button
+              onClick={(e) => {
+                e.preventDefault()
+                document.getElementById("features")?.scrollIntoView({ behavior: "smooth" })
+              }}
               className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors relative group"
             >
               Features
               <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-primary transition-all duration-300 group-hover:w-full"></span>
-            </a>
-            <a
-              href="#how-it-works"
+            </button>
+
+            <button
+              onClick={(e) => {
+                e.preventDefault()
+                document.getElementById("how-it-works")?.scrollIntoView({ behavior: "smooth" })
+              }}
               className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors relative group"
             >
               How It Works
               <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-primary transition-all duration-300 group-hover:w-full"></span>
-            </a>
+            </button>
             <ThemeToggle />
           </motion.nav>
         </div>
       </header>
 
-      <main className="container py-8 md:py-12">
+      <motion.main className="container py-8 md:py-12">
         <motion.section
           className="py-8 md:py-12 lg:py-16"
           initial={{ opacity: 0, y: 50 }}
@@ -94,13 +126,13 @@ export default function Home() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7, delay: 0.6 }}
             >
-              <a
-                href="#features"
+              <button
+                onClick={() => router.push("/#features")}
                 className="inline-flex items-center justify-center rounded-full px-6 py-2.5 text-sm font-medium shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring bg-primary text-primary-foreground hover:bg-primary/90 button-hover"
               >
                 <Zap className="mr-2 h-4 w-4" />
                 Explore Features
-              </a>
+              </button>
             </motion.div>
           </div>
 
@@ -165,9 +197,7 @@ export default function Home() {
                 <Wand2 className="h-6 w-6 text-primary relative z-10" />
               </div>
               <h3 className="text-xl font-bold group-hover:text-primary transition-colors">AI Processing</h3>
-              <p className="mt-2 text-muted-foreground">
-                Powered by AI for accurate voice-to-text conversion.
-              </p>
+              <p className="mt-2 text-muted-foreground">Powered by AI for accurate voice-to-text conversion.</p>
             </motion.div>
 
             <motion.div
@@ -183,9 +213,7 @@ export default function Home() {
                 <Volume2 className="h-6 w-6 text-primary relative z-10" />
               </div>
               <h3 className="text-xl font-bold group-hover:text-primary transition-colors">Voice Synthesis</h3>
-              <p className="mt-2 text-muted-foreground">
-                Convert AI responses back to natural-sounding speech.
-              </p>
+              <p className="mt-2 text-muted-foreground">Convert AI responses back to natural-sounding speech.</p>
             </motion.div>
           </div>
         </motion.section>
@@ -277,9 +305,7 @@ export default function Home() {
                   }}
                 >
                   <h3 className="text-xl font-bold">AI Processing</h3>
-                  <p className="mt-2 text-muted-foreground">
-                    AI processes your voice and generates a text response.
-                  </p>
+                  <p className="mt-2 text-muted-foreground">AI processes your voice and generates a text response.</p>
                 </motion.div>
               </motion.div>
 
@@ -345,15 +371,13 @@ export default function Home() {
                   }}
                 >
                   <h3 className="text-xl font-bold">Voice Synthesis</h3>
-                  <p className="mt-2 text-muted-foreground">
-                    Convert the text response back to natural speech.
-                  </p>
+                  <p className="mt-2 text-muted-foreground">Convert the text response back to natural speech.</p>
                 </motion.div>
               </motion.div>
             </div>
           </div>
         </motion.section>
-      </main>
+      </motion.main>
 
       <motion.footer
         className="border-t bg-muted/40 transition-colors duration-300 relative overflow-hidden mt-8"
@@ -382,3 +406,4 @@ export default function Home() {
     </motion.div>
   )
 }
+

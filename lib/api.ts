@@ -92,10 +92,15 @@ export async function synthesizeSpeech(text: string, requestId: string): Promise
 
 export async function sendConversationMessage(
   text: string,
-  conversationId?: string | null,
-  conversationHistory: Message[] = [],
+  conversationId?: string | null
 ): Promise<ConversationResponse> {
   try {
+    // Retrieve existing conversation history from local storage or state
+    let conversationHistory: Message[] = JSON.parse(localStorage.getItem("conversationHistory") || "[]");
+
+    // Append the new message
+    conversationHistory.push({ role: "user", content: text });
+
     const response = await fetch(`${API_BASE_URL}/api/conversation`, {
       method: "POST",
       headers: {
@@ -106,18 +111,27 @@ export async function sendConversationMessage(
         conversationId,
         conversationHistory,
       }),
-    })
+    });
 
     if (!response.ok) {
-      throw new Error("Failed to send conversation message")
+      throw new Error("Failed to send conversation message");
     }
 
-    return await response.json()
+    const data = await response.json();
+
+    // Append the assistant's response to history
+    conversationHistory.push({ role: "assistant", content: data.text });
+
+    // Save updated history
+    localStorage.setItem("conversationHistory", JSON.stringify(conversationHistory));
+
+    return data;
   } catch (error) {
-    console.error("Error in conversation:", error)
-    throw error
+    console.error("Error in conversation:", error);
+    throw error;
   }
 }
+
 
 export async function getHistory() {
   try {

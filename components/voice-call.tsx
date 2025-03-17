@@ -1,14 +1,10 @@
 "use client"
 
-import type React from "react"
-
 import { useState, useRef, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Mic, MicOff, Volume2, Loader2, VolumeX } from "lucide-react"
+import { Mic, MicOff, Volume2, Loader2, VolumeX, Sparkles } from "lucide-react"
 import { createSpeechRecognition } from "@/lib/speech-recognition"
 import { synthesizeSpeech, sendConversationMessage, type Message } from "@/lib/api"
 import { toast } from "@/hooks/use-toast"
-import { motion, AnimatePresence } from "framer-motion"
 import { cn, formatTime } from "@/lib/utils"
 
 export const VoiceCall = ({ onEndCall }: { onEndCall?: () => void }) => {
@@ -326,7 +322,7 @@ export const VoiceCall = ({ onEndCall }: { onEndCall?: () => void }) => {
 
     try {
       // Use the updated API function
-      const data = await sendConversationMessage(currentText, conversationId, conversationHistory)
+      const data = await sendConversationMessage(currentText, conversationId)
 
       // Add assistant response to conversation
       setConversationHistory((prev) => [...prev, { role: "assistant", content: data.text }])
@@ -487,160 +483,124 @@ export const VoiceCall = ({ onEndCall }: { onEndCall?: () => void }) => {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Status Indicator */}
-      <div className="flex items-center justify-center gap-4 mb-4">
-        <div
-          className={cn(
-            "px-4 py-2 rounded-full flex items-center gap-2 text-sm font-medium",
-            !isActive
-              ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
-              : isMuted
-                ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300"
-                : isListening
-                  ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-                  : isSpeaking
-                    ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
-                    : isProcessing
-                      ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
-                      : "bg-gray-100 text-gray-800 dark:bg-gray-800/30 dark:text-gray-300",
-          )}
-        >
-          {!isActive && (
-            <>
-              <div className="w-2 h-2 rounded-full bg-red-500"></div>
-              Call Ended
-            </>
-          )}
-          {isActive && isMuted && (
-            <>
-              <VolumeX className="h-4 w-4 text-orange-500" />
-              Microphone Muted
-            </>
-          )}
-          {isActive && !isMuted && isListening && (
-            <>
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-              Listening... {formatTime(listeningDuration)}
-            </>
-          )}
-          {isActive && isSpeaking && (
-            <>
-              <Volume2 className="h-4 w-4 text-blue-500" />
-              AI Speaking...
-            </>
-          )}
-          {isActive && isProcessing && (
-            <>
-              <Loader2 className="h-4 w-4 text-yellow-500 animate-spin" />
-              Processing...
-            </>
-          )}
-          {isActive && !isMuted && !isListening && !isSpeaking && !isProcessing && (
-            <>
-              <div className="w-2 h-2 rounded-full bg-gray-500"></div>
-              <span>Idle</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="ml-2 h-6 px-2 text-xs"
-                onClick={() => setupAndStartRecognition()}
-              >
-                Restart
-              </Button>
-            </>
-          )}
+    <div className="p-6">
+      {/* Title (only shown when conversation is active) */}
+      {conversationHistory.length > 0 && (
+        <div className="flex items-center gap-2 mb-6">
+          <Sparkles className="h-5 w-5 text-blue-500" />
+          <h1 className="text-xl font-semibold text-blue-600 dark:text-blue-400">AI Voice Conversation</h1>
         </div>
+      )}
 
+      {/* Status bar */}
+      <div className="flex items-center justify-center gap-3 mb-6">
         {isActive && (
-          <Button
-            variant={isMuted ? "default" : isListening ? "destructive" : "outline"}
-            size="sm"
-            onClick={toggleMute}
-            disabled={isProcessing}
-            className={cn(
-              "transition-colors",
-              isMuted ? "bg-orange-600 hover:bg-orange-700" : isListening && "animate-pulse",
-            )}
-          >
-            {isMuted ? <Mic className="h-4 w-4 mr-2" /> : <MicOff className="h-4 w-4 mr-2" />}
-            {isMuted ? "Unmute" : "Mute"}
-          </Button>
+          <>
+            <div
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-full",
+                isMuted
+                  ? "bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300"
+                  : isListening
+                    ? "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300"
+                    : isProcessing
+                      ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300"
+                      : isSpeaking
+                        ? "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300",
+              )}
+            >
+              {isMuted && (
+                <>
+                  <VolumeX className="h-4 w-4" />
+                  <span>Microphone Muted</span>
+                </>
+              )}
+              {!isMuted && isListening && (
+                <>
+                  <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
+                  <span>Listening... {formatTime(listeningDuration)}</span>
+                </>
+              )}
+              {isProcessing && (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Processing...</span>
+                </>
+              )}
+              {isSpeaking && (
+                <>
+                  <Volume2 className="h-4 w-4" />
+                  <span>AI Speaking...</span>
+                </>
+              )}
+              {!isMuted && !isListening && !isProcessing && !isSpeaking && (
+                <>
+                  <div className="h-2 w-2 rounded-full bg-slate-500"></div>
+                  <span>Idle</span>
+                </>
+              )}
+            </div>
+
+            <button
+              onClick={toggleMute}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-full text-white",
+                isMuted ? "bg-orange-500 hover:bg-orange-600" : "bg-red-500 hover:bg-red-600",
+              )}
+            >
+              {isMuted ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+              <span>{isMuted ? "Unmute" : "Mute"}</span>
+            </button>
+          </>
         )}
       </div>
 
       {/* Transcription Display */}
       {transcription && isActive && !isMuted && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-muted/30 p-4 rounded-lg text-sm"
-        >
-          <p className="font-medium mb-1">Current transcription:</p>
-          <p className="italic">{transcription}</p>
-        </motion.div>
+        <div className="bg-slate-100 dark:bg-slate-800/60 p-4 rounded-lg mb-6">
+          <p className="font-medium mb-1 text-slate-700 dark:text-slate-300">Current transcription:</p>
+          <p className="italic text-slate-600 dark:text-slate-400">{transcription}</p>
+        </div>
       )}
 
       {/* Conversation History */}
-      <div className="space-y-4 max-h-[400px] overflow-y-auto p-2 rounded-lg border bg-card/50 backdrop-blur-sm">
-        <AnimatePresence initial={false}>
-          {conversationHistory.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <p>Your conversation will appear here.</p>
-              <p className="text-sm mt-2">
-                {isMuted ? "Unmute your microphone to start speaking" : "Start speaking to begin..."}
-              </p>
-            </div>
-          ) : (
-            conversationHistory.map((message, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.3 }}
-                className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}
-              >
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 mb-6 h-[300px] overflow-y-auto">
+        {conversationHistory.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-slate-500 dark:text-slate-400">
+            <p className="mb-2">Your conversation will appear here.</p>
+            <p className="text-sm">
+              {isMuted ? "Unmute your microphone to start speaking" : "Start speaking to begin..."}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {conversationHistory.map((message, index) => (
+              <div key={index} className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}>
                 <div
                   className={cn(
                     "max-w-[80%] rounded-lg p-3",
-                    message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted",
+                    message.role === "user"
+                      ? "bg-blue-600 text-white"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200",
                   )}
                 >
                   {message.content}
                 </div>
-              </motion.div>
-            ))
-          )}
-        </AnimatePresence>
-        {/* Invisible element to scroll to */}
-        <div ref={conversationEndRef} />
+              </div>
+            ))}
+            <div ref={conversationEndRef} />
+          </div>
+        )}
       </div>
 
-      {/* Audio Visualization */}
+      {/* Audio Visualization (simplified) */}
       {isSpeaking && (
-        <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: "auto" }}
-          exit={{ opacity: 0, height: 0 }}
-          className="h-16 w-full flex items-center justify-center gap-[2px] p-2 bg-muted/30 rounded-lg overflow-hidden"
-        >
+        <div className="h-12 w-full flex items-center justify-center gap-[2px] bg-slate-100 dark:bg-slate-800/60 rounded-lg overflow-hidden">
           {audioVisualization.map((height, index) => (
-            <motion.div
-              key={index}
-              className="w-1.5 bg-gradient-to-t from-primary/40 to-primary rounded-full audio-bar"
-              style={
-                {
-                  "--random-height": `${height}%`,
-                  "--index": index,
-                } as React.CSSProperties
-              }
-              initial={{ height: "10%" }}
-              animate={{ height: `${height}%` }}
-              transition={{ duration: 0.2 }}
-            />
+            <div key={index} className="w-1 bg-blue-500 rounded-full" style={{ height: `${height}%` }} />
           ))}
-        </motion.div>
+        </div>
       )}
 
       {/* Audio element */}

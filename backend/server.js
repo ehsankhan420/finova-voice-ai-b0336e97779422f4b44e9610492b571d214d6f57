@@ -174,7 +174,7 @@ app.post("/api/conversation", async (req, res) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(requestBody),
-      },
+      }
     )
 
     if (!geminiResponse.ok) {

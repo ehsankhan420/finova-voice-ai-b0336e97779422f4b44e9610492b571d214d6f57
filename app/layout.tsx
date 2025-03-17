@@ -25,6 +25,10 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <AnimatedRouteIndicator />
           <PageTransition>{children}</PageTransition>
+          <div
+            id="page-transition-overlay"
+            className="fixed inset-0 pointer-events-none z-[100] bg-background opacity-0 transition-opacity duration-300"
+          />
         </ThemeProvider>
       </body>
     </html>

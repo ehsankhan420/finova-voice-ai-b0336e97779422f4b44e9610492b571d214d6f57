@@ -27,6 +27,7 @@ import { processVoice, synthesizeSpeech } from "@/lib/api"
 import { useTheme } from "next-themes"
 import { motion, AnimatePresence } from "framer-motion"
 import { useRouter } from "next/navigation"
+import { navigateTo } from "@/lib/navigation-helper"
 
 export default function UploadForm() {
   const router = useRouter()
@@ -42,6 +43,7 @@ export default function UploadForm() {
   const [audioVisualization, setAudioVisualization] = useState<number[]>([])
   const [recordingTime, setRecordingTime] = useState(0)
   const { theme } = useTheme()
+  const [isNavigating, setIsNavigating] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -418,12 +420,25 @@ export default function UploadForm() {
                     <Button
                       type="button"
                       variant="default"
-                      onClick={navigateToCall}
-                      disabled={isProcessing || isRecording}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setIsNavigating(true)
+                        navigateTo("/call")
+                      }}
+                      disabled={isProcessing || isRecording || isNavigating}
                       className="flex items-center gap-2 transition-all bg-gradient-to-r from-green-600 to-emerald-500 hover:opacity-90 text-white button-hover"
                     >
-                      <Phone className="h-4 w-4" />
-                      Start Call
+                      {isNavigating ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          Navigating...
+                        </>
+                      ) : (
+                        <>
+                          <Phone className="h-4 w-4" />
+                          Start Call
+                        </>
+                      )}
                     </Button>
                   </motion.div>
                 </motion.div>
